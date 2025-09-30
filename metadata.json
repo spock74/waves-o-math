@@ -1,0 +1,5 @@
+{
+  "name": "Visualização de Séries de Fourier",
+  "description": "Uma aplicação interativa que demonstra como uma onda pode ser construída pela soma de ondas senoidais (epiciclos) usando a série de Fourier. Os usuários podem ajustar o número de termos na série para ver a aproximação melhorar.",
+  "requestFramePermissions": []
+}
