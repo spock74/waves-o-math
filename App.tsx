@@ -1,14 +1,16 @@
 import React, { useState } from 'react';
 import FourierCanvas, { WaveType } from './components/FourierCanvas';
 import DecompositionView from './components/DecompositionView';
+import GeneralizationView from './components/GeneralizationView';
 
 const App: React.FC = () => {
   const [order, setOrder] = useState<number>(1);
   const [waveType, setWaveType] = useState<WaveType>('square');
   const [speed, setSpeed] = useState<number>(1);
-  const [viewMode, setViewMode] = useState<'epicycles' | 'decomposition'>('epicycles');
+  const [viewMode, setViewMode] = useState<'epicycles' | 'decomposition' | 'generalization'>('epicycles');
 
-  const formulas = {
+  // Fix: Use React.ReactNode instead of JSX.Element to resolve "Cannot find namespace 'JSX'" error.
+  const formulas: { [key in WaveType]?: React.ReactNode } = {
     square: (
       <p className="whitespace-nowrap">
         <span className="font-serif">f</span>
@@ -29,8 +31,25 @@ const App: React.FC = () => {
             <sub className="font-serif">N</sub>
             (<span className="font-serif">t</span>) = <sup>8</sup>&frasl;<sub>&pi;<sup>2</sup></sub> &sum; <sub><span className="font-serif">k</span>=0</sub><sup><span className="font-serif">N</span>-1</sup> (<sup>(-1)<sup><span className="font-serif">k</span></sup></sup>&frasl;<sub>(2<span className="font-serif">k</span>+1)<sup>2</sup></sub>) sin((2<span className="font-serif">k</span>+1)<span className="font-serif">t</span>)
         </p>
+    ),
+    gaussian: (
+        <p className="whitespace-nowrap">
+            <span className="font-serif">f</span>
+            (<span className="font-serif">t</span>) = <span className="font-serif">e</span><sup>-<span className="font-serif">t</span>²</sup>
+        </p>
     )
   };
+
+  const generalizationFormula = (
+    <div className="flex flex-col items-center">
+        <p className="whitespace-nowrap">
+            Função: <span className="font-serif">f</span>(<span className="font-serif">t</span>) = <span className="font-serif">t</span>², para <span className="font-serif">t</span> ∈ [-π, π]
+        </p>
+        <p className="whitespace-nowrap mt-1">
+            <span className="font-serif">f</span>(<span className="font-serif">t</span>) = <sup>&pi;²</sup>&frasl;<sub>3</sub> + &sum; <sub><span className="font-serif">n</span>=1</sub><sup>&infin;</sup> [<sup>4(-1)<sup><span className="font-serif">n</span></sup></sup>&frasl;<sub><span className="font-serif">n</span>²</sub>] cos(<span className="font-serif">n</span><span className="font-serif">t</span>)
+        </p>
+    </div>
+  );
 
   return (
     <div className="min-h-screen bg-gray-900 text-gray-100 flex flex-col items-center justify-center p-4 font-sans">
@@ -39,33 +58,52 @@ const App: React.FC = () => {
           <h1 className="text-5xl md:text-6xl text-amber-200" style={{ fontFamily: "'Baskervville', serif" }}>
             Séries de Fourier
           </h1>
-          <p className="text-lg text-gray-400 mt-2">Visualizando funções com epiciclos.</p>
+          <p className="text-lg text-gray-400 mt-2">
+            {viewMode === 'generalization'
+              ? 'Generalização das Séries de Fourier para intervalos de funções aperiódicas'
+              : 'Visualizando funções com epiciclos.'}
+          </p>
         </header>
 
-        <div className="w-full mb-6">
+        <div className="w-full mb-4">
             <div className="flex justify-center p-1 bg-gray-800 rounded-lg">
                 <button 
                     onClick={() => setViewMode('epicycles')}
                     className={`px-6 py-2 rounded-md transition-colors duration-200 text-lg font-medium ${viewMode === 'epicycles' ? 'bg-amber-300 text-gray-900' : 'text-gray-400 hover:bg-gray-700'}`}
                     aria-pressed={viewMode === 'epicycles'}
                 >
-                    Vista de Epiciclos
+                    Epiciclos
                 </button>
                 <button 
                     onClick={() => setViewMode('decomposition')}
                     className={`px-6 py-2 rounded-md transition-colors duration-200 text-lg font-medium ${viewMode === 'decomposition' ? 'bg-amber-300 text-gray-900' : 'text-gray-400 hover:bg-gray-700'}`}
                     aria-pressed={viewMode === 'decomposition'}
                 >
-                    Vista de Decomposição
+                    Decomposição
+                </button>
+                 <button 
+                    onClick={() => setViewMode('generalization')}
+                    className={`px-6 py-2 rounded-md transition-colors duration-200 text-lg font-medium ${viewMode === 'generalization' ? 'bg-amber-300 text-gray-900' : 'text-gray-400 hover:bg-gray-700'}`}
+                    aria-pressed={viewMode === 'generalization'}
+                >
+                    Generalização
                 </button>
             </div>
         </div>
 
+        <div className="text-center mb-4 text-gray-400 italic text-lg select-none min-h-[56px] flex flex-col justify-center">
+          {viewMode === 'generalization' ? generalizationFormula : formulas[waveType]}
+        </div>
+
         <div className="w-full bg-gray-800/50 backdrop-blur-sm rounded-lg shadow-2xl border border-gray-700 overflow-hidden">
-          {viewMode === 'epicycles' ? (
+          {viewMode === 'epicycles' && (
             <FourierCanvas order={order} waveType={waveType} speed={speed} key={`epicycles-${order}-${waveType}`} />
-          ) : (
+          )}
+          {viewMode === 'decomposition' && (
             <DecompositionView order={order} waveType={waveType} speed={speed} key={`decomposition-${order}-${waveType}`} />
+          )}
+          {viewMode === 'generalization' && (
+            <GeneralizationView order={order} speed={speed} key={`generalization-${order}`} />
           )}
         </div>
 
@@ -135,7 +173,7 @@ const App: React.FC = () => {
                 />
               </div>
             </div>
-             <div>
+             <div className={viewMode === 'generalization' ? 'invisible' : ''}>
                 <label htmlFor="wave-type-select" className="text-xl mb-3 text-amber-200 block">
                     Tipo de Onda
                 </label>
@@ -149,11 +187,9 @@ const App: React.FC = () => {
                     <option value="square">Quadrada</option>
                     <option value="sawtooth">Dente de Serra</option>
                     <option value="triangular">Triangular</option>
+                    <option value="gaussian">Gaussiana</option>
                 </select>
             </div>
-          </div>
-          <div className="text-center mt-6 text-gray-400 italic text-lg select-none">
-            {formulas[waveType]}
           </div>
         </div>
       </main>

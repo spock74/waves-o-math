@@ -10,9 +10,24 @@ interface DecompositionViewProps {
 // --- Layout Constants ---
 const ROW_HEIGHT = 80; // Fixed height for each component wave row
 const RESULT_AREA_HEIGHT = 166; // Fixed height for the bottom result panel
-const LEFT_LABEL_WIDTH = 60; // Space for 'k=...' labels
-const RIGHT_LABEL_WIDTH = 100; // Space for 'Freq/Amp' labels
+const LEFT_LABEL_WIDTH = 80; // Space for 'k=...' labels
+const RIGHT_LABEL_WIDTH = 120; // Space for 'Freq/Amp' labels
 const WAVE_PADDING = 15; // Horizontal padding for the wave animation
+
+// Function to calculate erf, needed for Gaussian a0
+const erf = (x: number) => {
+    const a1 =  0.254829592;
+    const a2 = -0.284496736;
+    const a3 =  1.421413741;
+    const a4 = -1.453152027;
+    const a5 =  1.061405429;
+    const p  =  0.3275911;
+    const sign = x >= 0 ? 1 : -1;
+    x = Math.abs(x);
+    const t = 1.0 / (1.0 + p * x);
+    const y = 1.0 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * Math.exp(-x * x);
+    return sign * y;
+}
 
 const DecompositionView: React.FC<DecompositionViewProps> = ({ order, waveType, speed }) => {
   const componentsCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -22,9 +37,17 @@ const DecompositionView: React.FC<DecompositionViewProps> = ({ order, waveType, 
   const animationFrameId = useRef<number | null>(null);
   const time = useRef(0);
   
-  // Pre-calculate wave parameters for efficiency. This only re-runs when order or waveType changes.
   const waveParams = useMemo(() => {
     const params = [];
+    let a0 = 0;
+    let seriesType: 'sin' | 'cos' = 'sin';
+    const L = waveType === 'gaussian' ? 3 : Math.PI;
+
+    if (waveType === 'gaussian') {
+      seriesType = 'cos';
+      a0 = (Math.sqrt(Math.PI) * erf(L)) / (2 * L);
+    }
+    
     for (let k = 0; k < order; k++) {
         let n: number, pureAmplitude: number;
         switch (waveType) {
@@ -36,6 +59,11 @@ const DecompositionView: React.FC<DecompositionViewProps> = ({ order, waveType, 
                 n = 2 * k + 1;
                 pureAmplitude = (8 / (Math.pow(Math.PI, 2))) * (Math.pow(-1, k) / Math.pow(n, 2));
                 break;
+            case 'gaussian':
+                n = k + 1;
+                const sigma = 1;
+                pureAmplitude = (1/L) * Math.sqrt(2 * Math.PI) * sigma * Math.exp(-0.5 * Math.pow(sigma * n * Math.PI / L, 2));
+                break;
             case 'square':
             default:
                 n = 2 * k + 1;
@@ -44,7 +72,7 @@ const DecompositionView: React.FC<DecompositionViewProps> = ({ order, waveType, 
         }
         params.push({ n, pureAmplitude });
     }
-    return params;
+    return { components: params, a0, seriesType };
   }, [order, waveType]);
 
   useEffect(() => {
@@ -87,7 +115,6 @@ const DecompositionView: React.FC<DecompositionViewProps> = ({ order, waveType, 
       cCtx.clearRect(0, 0, logicalWidth, order * ROW_HEIGHT);
       rCtx.clearRect(0, 0, logicalWidth, RESULT_AREA_HEIGHT);
       
-      // Define drawing areas based on layout constants
       const waveStartX = LEFT_LABEL_WIDTH + WAVE_PADDING;
       const waveEndX = logicalWidth - RIGHT_LABEL_WIDTH - WAVE_PADDING;
       const waveLength = waveEndX - waveStartX;
@@ -100,23 +127,22 @@ const DecompositionView: React.FC<DecompositionViewProps> = ({ order, waveType, 
       
       for (let i = 0; i < waveLength; i++) {
         const t = time.current + (i - waveLength) * 0.01;
-        let totalY = 0;
+        let totalY = waveParams.a0 / 2; // Start with a0 offset
         
         for (let k = 0; k < order; k++) {
-            const params = waveParams[k];
-            const y = params.pureAmplitude * Math.sin(params.n * t);
+            const params = waveParams.components[k];
+            const trigFunc = waveParams.seriesType === 'cos' ? Math.cos : Math.sin;
+            const y = params.pureAmplitude * trigFunc(params.n * t);
             wavePath[k][i] = y;
             totalY += y;
         }
         summedWavePath[i] = totalY;
       }
 
-      // Draw individual component waves
       for (let k = 0; k < order; k++) {
         const centerY = (k * ROW_HEIGHT) + (ROW_HEIGHT / 2);
-        const params = waveParams[k];
+        const params = waveParams.components[k];
         
-        // Draw center line
         cCtx.beginPath();
         cCtx.strokeStyle = '#4b5563';
         cCtx.setLineDash([2, 3]);
@@ -125,24 +151,22 @@ const DecompositionView: React.FC<DecompositionViewProps> = ({ order, waveType, 
         cCtx.stroke();
         cCtx.setLineDash([]);
         
-        // Draw wave
         cCtx.strokeStyle = colors[k % colors.length];
         cCtx.lineWidth = 2;
         cCtx.beginPath();
-        cCtx.moveTo(waveStartX, centerY + wavePath[k][0] * componentScale);
+        cCtx.moveTo(waveStartX, centerY - wavePath[k][0] * componentScale);
         for (let i = 1; i < waveLength; i++) {
-            cCtx.lineTo(waveStartX + i, centerY + wavePath[k][i] * componentScale);
+            cCtx.lineTo(waveStartX + i, centerY - wavePath[k][i] * componentScale);
         }
         cCtx.stroke();
         
-        // Draw Left Label
         cCtx.fillStyle = '#e5e7eb';
         cCtx.font = 'bold 14px sans-serif';
         cCtx.textAlign = 'center';
         const kLabel = waveType === 'sawtooth' ? k + 1 : k;
-        cCtx.fillText(`k = ${kLabel}`, LEFT_LABEL_WIDTH / 2, centerY);
+        const termLabel = waveParams.seriesType === 'cos' ? `a_k (k=${kLabel})` : `k = ${kLabel}`
+        cCtx.fillText(termLabel, LEFT_LABEL_WIDTH / 2, centerY);
 
-        // Draw Right Labels
         cCtx.fillStyle = '#9ca3af';
         cCtx.font = '14px sans-serif';
         cCtx.textAlign = 'center';
@@ -154,29 +178,26 @@ const DecompositionView: React.FC<DecompositionViewProps> = ({ order, waveType, 
       const maxAbsY = summedWavePath.reduce((max, y) => Math.max(max, Math.abs(y)), 0);
       const resultScale = maxAbsY > 0 ? (resultCenterY * 0.85) / maxAbsY : 1; 
 
-      // Draw the scaled summed wave
       rCtx.strokeStyle = '#fde68a';
       rCtx.lineWidth = 3;
       rCtx.beginPath();
-      rCtx.moveTo(waveStartX, resultCenterY + summedWavePath[0] * resultScale);
+      rCtx.moveTo(waveStartX, resultCenterY - summedWavePath[0] * resultScale);
       for (let i = 1; i < waveLength; i++) {
-        rCtx.lineTo(waveStartX + i, resultCenterY + summedWavePath[i] * resultScale);
+        rCtx.lineTo(waveStartX + i, resultCenterY - summedWavePath[i] * resultScale);
       }
       rCtx.stroke();
       
-      // Draw Result Left Label
       rCtx.fillStyle = '#f3f4f6';
       rCtx.font = 'bold 16px sans-serif';
       rCtx.textAlign = 'center';
       rCtx.fillText('Resultado', LEFT_LABEL_WIDTH / 2, resultCenterY);
 
-      // Draw Result Right Labels
       rCtx.fillStyle = '#9ca3af';
       rCtx.font = '14px sans-serif';
       rCtx.textAlign = 'center';
-      const fundamentalFreq = waveParams.length > 0 ? waveParams[0].n : 1;
-      rCtx.fillText(`Freq: ${fundamentalFreq}`, logicalWidth - RIGHT_LABEL_WIDTH / 2, resultCenterY - 10);
-      rCtx.fillText(`Amp: ${maxAbsY.toFixed(3)}`, logicalWidth - RIGHT_LABEL_WIDTH / 2, resultCenterY + 15);
+      const fundamentalFreq = waveParams.components.length > 0 ? waveParams.components[0].n : 1;
+      rCtx.fillText(`Freq Fund: ${fundamentalFreq}`, logicalWidth - RIGHT_LABEL_WIDTH / 2, resultCenterY - 10);
+      rCtx.fillText(`Amp Pico: ${maxAbsY.toFixed(3)}`, logicalWidth - RIGHT_LABEL_WIDTH / 2, resultCenterY + 15);
 
 
       time.current -= 0.025 * speed; // Negative increment moves wave right-to-left

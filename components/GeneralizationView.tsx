@@ -1,29 +1,11 @@
 import React, { useRef, useEffect } from 'react';
 
-export type WaveType = 'square' | 'sawtooth' | 'triangular' | 'gaussian';
-
-interface FourierCanvasProps {
+interface GeneralizationViewProps {
   order: number;
-  waveType: WaveType;
   speed: number;
 }
 
-// Function to calculate erf, needed for Gaussian a0
-const erf = (x: number) => {
-    const a1 =  0.254829592;
-    const a2 = -0.284496736;
-    const a3 =  1.421413741;
-    const a4 = -1.453152027;
-    const a5 =  1.061405429;
-    const p  =  0.3275911;
-    const sign = x >= 0 ? 1 : -1;
-    x = Math.abs(x);
-    const t = 1.0 / (1.0 + p * x);
-    const y = 1.0 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * Math.exp(-x * x);
-    return sign * y;
-}
-
-const FourierCanvas: React.FC<FourierCanvasProps> = ({ order, waveType, speed }) => {
+const GeneralizationView: React.FC<GeneralizationViewProps> = ({ order, speed }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationFrameId = useRef<number | null>(null);
   const time = useRef(0);
@@ -66,48 +48,20 @@ const FourierCanvas: React.FC<FourierCanvasProps> = ({ order, waveType, speed })
       let y = logicalHeight / 2;
 
       const waveStartX = logicalWidth * 0.55;
-      const scaleFactor = logicalHeight / 5;
+      const scaleFactor = logicalHeight / 15;
 
-      // Handle a0 term for even functions like Gaussian
-      if (waveType === 'gaussian') {
-          const L = 3; // Interval [-3, 3]
-          const a0 = (Math.sqrt(Math.PI) * erf(L)) / (2 * L);
-          y -= a0 * scaleFactor * 2; // Offset initial y. Scaled for visibility.
-      }
+      // a0 term for t^2 on [-pi, pi] is pi^2 / 3
+      const a0 = Math.pow(Math.PI, 2) / 3;
+      y -= a0 * scaleFactor;
 
-
-      for (let k = 0; k < order; k++) {
+      for (let k = 1; k <= order; k++) {
         const prevX = x;
         const prevY = y;
 
-        let n: number;
-        let radius: number;
-        let phase = 0;
-
-        switch (waveType) {
-          case 'sawtooth':
-            n = k + 1;
-            radius = (2 / (n * Math.PI)) * Math.pow(-1, n + 1) * scaleFactor * 1.5;
-            break;
-          case 'triangular':
-            n = 2 * k + 1;
-            radius = (8 / (Math.pow(Math.PI, 2))) * (Math.pow(-1, k) / Math.pow(n, 2)) * scaleFactor * 3;
-            break;
-          case 'gaussian':
-            n = k + 1;
-            const L = 3;
-            // Simplified calculation for a_n of a Gaussian pulse
-            const sigma = 1;
-            const an = (1/L) * Math.sqrt(2 * Math.PI) * sigma * Math.exp(-0.5 * Math.pow(sigma * n * Math.PI / L, 2));
-            radius = an * scaleFactor * 2;
-            phase = Math.PI / 2; // Cosine term
-            break;
-          case 'square':
-          default:
-            n = 2 * k + 1;
-            radius = (4 / (n * Math.PI)) * scaleFactor;
-            break;
-        }
+        const n = k;
+        // an term for t^2 is 4*(-1)^n / n^2
+        const radius = (4 * Math.pow(-1, n) / Math.pow(n, 2)) * scaleFactor;
+        const phase = Math.PI / 2; // Cosine term
 
         const angle = n * time.current + phase;
 
@@ -149,7 +103,7 @@ const FourierCanvas: React.FC<FourierCanvasProps> = ({ order, waveType, speed })
         ctx.lineTo(waveStartX + i, wavePath.current[i]);
       }
       ctx.stroke();
-
+      
       time.current += 0.025 * speed;
 
       animationFrameId.current = requestAnimationFrame(animate);
@@ -163,16 +117,16 @@ const FourierCanvas: React.FC<FourierCanvasProps> = ({ order, waveType, speed })
         cancelAnimationFrame(animationFrameId.current);
       }
     };
-  }, [order, waveType, speed]);
+  }, [order, speed]);
 
   return (
     <canvas 
       ref={canvasRef} 
       className="w-full"
       style={{ height: '500px' }}
-      aria-label="Canvas de animação da série de Fourier"
+      aria-label="Canvas de animação da série de Fourier para uma função quadrática"
     />
   );
 };
 
-export default FourierCanvas;
+export default GeneralizationView;
